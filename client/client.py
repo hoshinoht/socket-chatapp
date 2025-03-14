@@ -5,8 +5,13 @@ import os
 import time
 import threading
 
-# Enable debugging
-DEBUG = True
+# Parse command line arguments for debug mode
+DEBUG = False
+args = sys.argv[:]
+if "--debug" in args:
+    DEBUG = True
+    args.remove("--debug")
+    print("Debug mode enabled")
 
 def debug_print(message):
     if DEBUG:
@@ -21,11 +26,11 @@ def msvcrt_available():
     except ImportError:
         return False
 
-if len(sys.argv) != 3:
-    print("Usage: script IP_address port")
+if len(args) != 3:
+    print("Usage: script IP_address port [--debug]")
     sys.exit()
-IP_address = str(sys.argv[1])
-Port = int(sys.argv[2])
+IP_address = str(args[1])
+Port = int(args[2])
 
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 try:

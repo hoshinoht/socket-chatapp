@@ -6,8 +6,13 @@ import threading
 import time
 import traceback
 
-# Enable debugging
-DEBUG = True
+# Parse command line arguments for debug mode
+DEBUG = False
+args = sys.argv[:]
+if "--debug" in args:
+    DEBUG = True
+    args.remove("--debug")
+    print("Debug mode enabled")
 
 def debug_print(message, username="SERVER"):
     if DEBUG:
@@ -29,23 +34,24 @@ class DebugLock:
         self.acquire_time = 0
         
     def acquire(self, blocking=True, timeout=-1):
-        caller = traceback.extract_stack()[-2]
-        debug_print(f"Attempting to acquire lock at {caller.filename}:{caller.lineno}")
         result = self._lock.acquire(blocking, timeout)
-        if result:
+        if DEBUG and result:
+            caller = traceback.extract_stack()[-2]
+            debug_print(f"Attempting to acquire lock at {caller.filename}:{caller.lineno}")
             self.holder = threading.get_ident()
             self.acquire_time = time.time()
             debug_print(f"Lock acquired by thread {self.holder}")
         return result
         
     def release(self):
-        caller = traceback.extract_stack()[-2]
-        debug_print(f"Releasing lock at {caller.filename}:{caller.lineno}")
-        if self.acquire_time:
-            hold_time = time.time() - self.acquire_time
-            debug_print(f"Lock was held for {hold_time:.6f} seconds")
-        self.holder = None
-        self.acquire_time = 0
+        if DEBUG:
+            caller = traceback.extract_stack()[-2]
+            debug_print(f"Releasing lock at {caller.filename}:{caller.lineno}")
+            if self.acquire_time:
+                hold_time = time.time() - self.acquire_time
+                debug_print(f"Lock was held for {hold_time:.6f} seconds")
+            self.holder = None
+            self.acquire_time = 0
         return self._lock.release()
     
     def __enter__(self):
@@ -414,11 +420,12 @@ def clientthread(conn, addr):
         debug_print(f"Connection closed for {username} from {addr}", username)
 
 def main():
-    if len(sys.argv) != 3:
-        print("Usage: script IP_address port")
+    # Check for correct number of arguments
+    if len(args) != 3:
+        print("Usage: script IP_address port [--debug]")
         sys.exit()
-    IP_address = str(sys.argv[1])
-    Port = int(sys.argv[2])
+    IP_address = str(args[1])
+    Port = int(args[2])
     
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
