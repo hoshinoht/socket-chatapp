@@ -4,6 +4,14 @@ import sys
 import os
 import time
 
+# Helper function to check if msvcrt is available
+def msvcrt_available():
+    try:
+        import msvcrt
+        return True
+    except ImportError:
+        return False
+
 if len(sys.argv) != 3:
     print("Usage: script IP_address port")
     sys.exit()
@@ -90,10 +98,3 @@ except Exception as e:
 finally:
     server.close()
 
-# Helper function to check if msvcrt is available
-def msvcrt_available():
-    try:
-        import msvcrt
-        return True
-    except ImportError:
-        return False
