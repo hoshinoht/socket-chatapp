@@ -68,6 +68,12 @@ except Exception as e:
 
 # Flag to indicate if the client is running
 running = True
+prompt = f"[{username}] "
+
+# Function to display the prompt
+def show_prompt():
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
 
 # Thread function for receiving messages from server
 def receive_messages():
@@ -79,17 +85,19 @@ def receive_messages():
             message = server.recv(2048).decode()
             if not message:
                 debug_print("Empty message received, server disconnected")
-                print("Connection closed by server")
+                print("\nConnection closed by server")
                 running = False
                 break
             
-            # Print the received message
+            # Print the received message with a newline before it to separate from prompt
             debug_print(f"Received: {message.strip()}")
+            sys.stdout.write("\r" + " " * len(prompt) + "\r")  # Clear prompt
             print(message, end='')
             sys.stdout.flush()
+            show_prompt()  # Re-show the prompt
         except Exception as e:
             debug_print(f"Error in receive thread: {e}")
-            print(f"Error receiving: {e}")
+            print(f"\nError receiving: {e}")
             running = False
             break
     debug_print("Receive thread ended")
@@ -98,6 +106,8 @@ def receive_messages():
 def send_messages():
     global running
     debug_print("Send thread started (main thread)")
+    show_prompt()  # Show initial prompt
+    
     while running:
         try:
             # Read input from user
@@ -115,16 +125,19 @@ def send_messages():
                     debug_print("Message sent successfully")
                 except Exception as e:
                     debug_print(f"Send error: {e}")
-                    print(f"Error sending: {e}")
+                    print(f"\nError sending: {e}")
                     running = False
                     break
+            
+            # Show the prompt again after sending
+            show_prompt()
         except (KeyboardInterrupt, EOFError):
             debug_print("KeyboardInterrupt/EOFError detected")
             running = False
             break
         except Exception as e:
             debug_print(f"Input exception: {e}")
-            print(f"Input error: {e}")
+            print(f"\nInput error: {e}")
             time.sleep(0.1)  # Small delay to prevent CPU hogging
     debug_print("Send thread ended")
 
