@@ -5,6 +5,11 @@ from _thread import start_new_thread
 import threading
 import time
 import traceback
+import os
+
+# Add parent directory to path to import cipher
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from utils.cipher import encrypt, decrypt
 
 # Parse command line arguments for debug mode
 DEBUG = False
@@ -73,15 +78,18 @@ def send_to_client(username, message):
             if not message.endswith('\n'):
                 message += '\n'
             
+            # Encrypt message before sending
+            encrypted_message = encrypt(message)
+            
             # Send message in chunks to prevent buffer issues
             try:
                 debug_print(f"Using sendall to {username}", username)
-                clients[username].sendall(message.encode())
+                clients[username].sendall(encrypted_message)
                 debug_print(f"sendall successful to {username}", username)
             except Exception as sendall_error:
                 debug_print(f"sendall failed, using regular send: {sendall_error}", username)
                 # Fall back to regular send if sendall fails
-                clients[username].send(message.encode())
+                clients[username].send(encrypted_message)
                 debug_print(f"regular send successful to {username}", username)
     except Exception as e:
         debug_print(f"Error sending to {username}: {e}", username)
@@ -111,7 +119,9 @@ def broadcast(message, exclude_conn=None):
         if conn != exclude_conn:
             try:
                 debug_print(f"Sending broadcast to {user}")
-                conn.send(message.encode())
+                # Encrypt the message before broadcasting
+                encrypted_message = encrypt(message)
+                conn.send(encrypted_message)
                 debug_print(f"Broadcast sent to {user}")
                 
                 # Update history
@@ -150,13 +160,16 @@ def clientthread(conn, addr):
     try:
         # --- Authentication Phase ---
         debug_print(f"New connection from {addr}, starting authentication")
-        conn.send("Username: ".encode())
-        username = conn.recv(2048).decode().strip()
+        conn.send("Username: ".encode())  # Initial prompt unencrypted
+        encrypted_username = conn.recv(2048)
+        username = decrypt(encrypted_username).strip()
         if not username:
             conn.close()
             return
-        conn.send("Password: ".encode())
-        password = conn.recv(2048).decode().strip()
+            
+        conn.send("Password: ".encode())  # Password prompt unencrypted
+        encrypted_password = conn.recv(2048)
+        password = decrypt(encrypted_password).strip()
         if not password:
             conn.close()
             return
@@ -164,14 +177,14 @@ def clientthread(conn, addr):
         with lock:
             if username in credentials:
                 if credentials[username] != password:
-                    conn.send("ERROR: Incorrect password.\n".encode())
+                    conn.send(encrypt("ERROR: Incorrect password.\n"))
                     conn.close()
                     return
             else:
                 credentials[username] = password
 
             if username in clients:
-                conn.send("ERROR: User already logged in.\n".encode())
+                conn.send(encrypt("ERROR: User already logged in.\n"))
                 conn.close()
                 return
             clients[username] = conn
@@ -190,12 +203,13 @@ def clientthread(conn, addr):
                 debug_print(f"Waiting for input from {username}", username)
                 ready = select.select([conn], [], [], 1)
                 if ready[0]:
-                    message = conn.recv(2048)
-                    if not message:
+                    encrypted_message = conn.recv(2048)
+                    if not encrypted_message:
                         debug_print(f"Empty message from {username}, closing connection.", username)
                         break
                     
-                    message_str = message.decode().strip()
+                    # Decrypt the message
+                    message_str = decrypt(encrypted_message).strip()
                     if not message_str:
                         debug_print(f"Empty string from {username}, continuing", username)
                         continue

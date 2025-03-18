@@ -4,6 +4,11 @@ import sys
 import os
 import time
 import threading
+import sys
+
+# Add parent directory to path to import cipher
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from utils.cipher import encrypt, decrypt
 
 # Parse command line arguments for debug mode
 DEBUG = False
@@ -44,17 +49,22 @@ except Exception as e:
 
 # --- Authentication Sequence ---
 try:
+    # Receive prompt (unencrypted for initial connection)
     sys.stdout.write(server.recv(2048).decode())
     sys.stdout.flush()
     username = input()
-    server.send(username.encode())
+    # Send username encrypted
+    server.send(encrypt(username))
 
+    # Receive password prompt
     sys.stdout.write(server.recv(2048).decode())
     sys.stdout.flush()
     password = input()
-    server.send(password.encode())
+    # Send password encrypted
+    server.send(encrypt(password))
 
-    response = server.recv(2048).decode()
+    # Decrypt server response
+    response = decrypt(server.recv(2048))
     if response.startswith("ERROR"):
         print(response)
         server.close()
@@ -82,12 +92,15 @@ def receive_messages():
     while running:
         try:
             debug_print("Waiting for server messages...")
-            message = server.recv(2048).decode()
-            if not message:
+            encrypted_message = server.recv(2048)
+            if not encrypted_message:
                 debug_print("Empty message received, server disconnected")
                 print("\nConnection closed by server")
                 running = False
                 break
+            
+            # Decrypt the received message
+            message = decrypt(encrypted_message)
             
             # Print the received message with a newline before it to separate from prompt
             debug_print(f"Received: {message.strip()}")
@@ -121,7 +134,9 @@ def send_messages():
             if user_input:
                 debug_print(f"Sending: {user_input}")
                 try:
-                    server.send(user_input.encode())
+                    # Encrypt the message before sending
+                    encrypted_message = encrypt(user_input)
+                    server.send(encrypted_message)
                     debug_print("Message sent successfully")
                 except Exception as e:
                     debug_print(f"Send error: {e}")
