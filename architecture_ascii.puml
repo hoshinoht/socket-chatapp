@@ -1,0 +1,8 @@
+@startuml
+!pragma layout elk
+!pragma svek_trace on
+skinparam defaultTextAlignment center
+
+title Socket Chat Application Architecture
+
+@enduml

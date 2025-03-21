@@ -1,0 +1,59 @@
+' Use a simple generation strategy that doesn't require GraphViz
+!pragma layout smetana
+
+title Socket Chat Application Architecture
+
+' Define actors
+actor "User 1" as user1
+actor "User 2" as user2
+
+' Define main components
+package "Client Application" as client1 {
+  component "Socket Connection" as socket1
+  component "Encryption Layer" as enc1
+  component "User Interface" as ui1
+}
+
+package "Client Application" as client2 {
+  component "Socket Connection" as socket2
+  component "Encryption Layer" as enc2
+  component "User Interface" as ui2
+}
+
+package "Server Application" {
+  component "Socket Server" as server
+  component "Encryption Layer" as serverEnc
+  component "Authentication" as auth
+  component "Message Router" as router
+  
+  database "Users" {
+    [Credentials]
+    [Connections]
+  }
+  
+  database "Messages" {
+    [History]
+    [Groups]
+  }
+}
+
+' Define relationships
+user1 --> ui1 : interacts
+ui1 --> enc1 : sends message
+enc1 --> socket1 : encrypted message
+socket1 --> server : transmits
+
+user2 --> ui2 : interacts
+ui2 --> enc2 : sends message
+enc2 --> socket2 : encrypted message
+socket2 --> server : transmits
+
+server --> auth : authenticates
+server --> serverEnc : encrypts/decrypts
+server --> router : routes messages
+router --> Credentials : validates
+router --> Connections : manages
+router --> History : stores
+router --> Groups : manages
+
+@enduml
