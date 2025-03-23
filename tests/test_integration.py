@@ -1,3 +1,7 @@
+"""
+Integration tests for the Socket Chat Application.
+Tests the client-server communication with mock server.
+"""
 import unittest
 import sys
 import os
@@ -12,20 +16,27 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from utils.cipher import encrypt, decrypt
 
 class MockServer:
-    """A simple mock server for testing"""
+    """
+    A simple mock server for testing client-server communication.
+    Provides basic functionality to simulate the real server's behavior.
+    """
     
     def __init__(self, host='127.0.0.1', port=0):
+        """
+        Initialize the mock server with a socket that will listen on the specified host and port.
+        Using port=0 lets the OS choose an available port.
+        """
         self.host = host
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_socket.bind((host, port))
-        self.actual_port = self.server_socket.getsockname()[1]
+        self.actual_port = self.server_socket.getsockname()[1]  # Get the port assigned by OS
         self.is_running = False
         self.clients = []
         self.clients_lock = threading.Lock()  # Add a lock for thread safety
         
     def start(self):
-        """Start the mock server"""
+        """Start the mock server in a background thread and return the port it's listening on"""
         self.is_running = True
         self.server_socket.listen(5)
         self.server_thread = threading.Thread(target=self._accept_connections)
@@ -34,7 +45,7 @@ class MockServer:
         return self.actual_port
         
     def _accept_connections(self):
-        """Accept connections in a loop"""
+        """Accept incoming client connections in a loop"""
         while self.is_running:
             try:
                 self.server_socket.settimeout(0.5)  # Short timeout to allow checking is_running
@@ -52,7 +63,7 @@ class MockServer:
                 break
                 
     def _handle_client(self, client_socket):
-        """Echo back messages from the client"""
+        """Handle an individual client connection by echoing messages back"""
         try:
             # Send username prompt
             client_socket.send("Username: ".encode())
@@ -100,7 +111,7 @@ class MockServer:
                     self.clients.remove(client_socket)
                 
     def stop(self):
-        """Stop the mock server"""
+        """Stop the mock server and close all client connections"""
         self.is_running = False
         # Close all client connections
         with self.clients_lock:
@@ -127,18 +138,24 @@ class TestClientServerIntegration(unittest.TestCase):
     
     @classmethod
     def setUpClass(cls):
-        """Start a mock server for the tests"""
+        """Start a mock server for all tests in this class"""
         cls.mock_server = MockServer()
         cls.server_port = cls.mock_server.start()
         time.sleep(0.5)  # Give the server time to start
     
     @classmethod
     def tearDownClass(cls):
-        """Stop the mock server"""
+        """Stop the mock server after all tests in this class"""
         cls.mock_server.stop()
     
     def test_client_connection_basic(self):
-        """Test basic client connection using sockets directly"""
+        """
+        Test basic client connection flow:
+        1. Connect to server
+        2. Authenticate with username/password
+        3. Send a test message
+        4. Verify echo response
+        """
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client.connect(('127.0.0.1', self.server_port))
         

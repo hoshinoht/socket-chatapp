@@ -1,16 +1,12 @@
+"""Encryption utilities for secure socket communication."""
 import base64
-import os
 import sys
 import time
 import threading
-
-# Use the standard Python cryptography library which is more commonly available
 from cryptography.fernet import Fernet
 
-# Debug mode flag
-DEBUG = False
-if "--debug" in sys.argv:
-    DEBUG = True
+# Debug mode flag - enables verbose logging when --debug is passed as argument
+DEBUG = "--debug" in sys.argv
 
 def debug_print(message):
     """Print debug messages when DEBUG is True"""
@@ -19,65 +15,45 @@ def debug_print(message):
         thread_id = threading.get_ident()
         print(f"[CIPHER DEBUG {timestamp}] [{thread_id}] {message}", file=sys.stderr, flush=True)
 
-# Create a proper Fernet key (must be 32 url-safe base64-encoded bytes)
-# We'll derive a proper key from our existing key string
 def get_fernet_key(key_bytes):
+    """Generate a secure key for Fernet encryption from input seed."""
     debug_print(f"Generating Fernet key from seed: {key_bytes}")
+    
     # Use SHA-256 to derive a 32-byte key, then encode to base64
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     
-    salt = b'socketapp'  # A constant salt (could be made more secure)
-    debug_print(f"Using salt: {salt}")
-    
+    salt = b'socketapp'  # A constant salt
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt,
         iterations=100000,
     )
-    key = base64.urlsafe_b64encode(kdf.derive(key_bytes))
-    debug_print(f"Generated key: {key[:10]}... (first 10 bytes shown)")
-    return key
+    return base64.urlsafe_b64encode(kdf.derive(key_bytes))
 
-# Use our original key as a seed to generate a proper Fernet key
-KEY_SEED = b'SecureSocketChat16'  # Original key as seed
+# Initialize encryption components
+KEY_SEED = b'SecureSocketChat16'
 debug_print("Initializing cipher module")
-FERNET_KEY = get_fernet_key(KEY_SEED)
-CIPHER_SUITE = Fernet(FERNET_KEY)
+CIPHER_SUITE = Fernet(get_fernet_key(KEY_SEED))
 debug_print("Cipher module initialized successfully")
 
 def encrypt(plaintext):
-    """
-    Encrypt a message using Fernet (AES-128)
-    """
+    """Encrypt a message using Fernet (AES-128)."""
     # Convert to bytes if it's a string
     if isinstance(plaintext, str):
-        debug_print(f"Converting string to bytes, length: {len(plaintext)}")
         plaintext = plaintext.encode('utf-8')
-    else:
-        debug_print(f"Input is already bytes, length: {len(plaintext)}")
     
-    # Encrypt and return as base64
-    debug_print("Encrypting data")
-    encrypted = CIPHER_SUITE.encrypt(plaintext)
-    debug_print(f"Encryption complete, encrypted length: {len(encrypted)}")
-    return encrypted
+    # Encrypt and return
+    debug_print(f"Encrypting data, length: {len(plaintext)}")
+    return CIPHER_SUITE.encrypt(plaintext)
 
 def decrypt(ciphertext):
-    """
-    Decrypt a message using Fernet (AES-128)
-    """
+    """Decrypt a message using Fernet (AES-128)."""
     try:
         debug_print(f"Attempting to decrypt data of length: {len(ciphertext)}")
-        # Decrypt the message
         decrypted = CIPHER_SUITE.decrypt(ciphertext)
-        
-        # Return as string
-        debug_print(f"Decryption successful, decrypted length: {len(decrypted)}")
-        result = decrypted.decode('utf-8')
-        debug_print(f"Decoded to string, length: {len(result)}")
-        return result
+        return decrypted.decode('utf-8')
     except Exception as e:
         debug_print(f"Decryption error: {e}")
         print(f"Decryption error: {e}")

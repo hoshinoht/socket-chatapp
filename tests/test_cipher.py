@@ -1,3 +1,7 @@
+"""
+Unit tests for the encryption/decryption utilities.
+Tests various inputs to ensure reliable encryption and decryption.
+"""
 import unittest
 import sys
 import os
@@ -38,14 +42,14 @@ class TestCipher(unittest.TestCase):
         self.assertEqual(original, decrypted)
         
     def test_long_message(self):
-        """Test encryption and decryption of a long message"""
+        """Test encryption and decryption of a long message (10KB)"""
         original = "A" * 10000  # 10KB string
         encrypted = encrypt(original)
         decrypted = decrypt(encrypted)
         self.assertEqual(original, decrypted)
     
     def test_invalid_ciphertext(self):
-        """Test decryption of invalid ciphertext returns None"""
+        """Test that decryption of invalid ciphertext returns None"""
         invalid_data = b"NotValidCiphertext"
         result = decrypt(invalid_data)
         self.assertIsNone(result)
