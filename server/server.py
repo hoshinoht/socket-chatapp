@@ -244,7 +244,10 @@ def clientthread(conn, addr):
                     try:
                         # Command handling
                         if message_str.startswith('@'):
-                            process_command(username, message_str, conn)
+                            should_quit = process_command(username, message_str, conn)
+                            if should_quit:
+                                debug_print(f"Quit command received from {username}", username)
+                                break
                         else:
                             # Regular message broadcasting
                             debug_print(f"Broadcasting regular message from {username}", username)
@@ -491,7 +494,6 @@ def handle_group(username, args, conn):
 
 # Main command handler mapping
 COMMAND_HANDLERS = {
-    "@quit": handle_quit,
     "@names": handle_names,
     "@history": handle_history,
     "@group": handle_group
@@ -544,7 +546,10 @@ def process_command(username, message_str, conn):
     command = parts[0]
     args = parts[1:] if len(parts) > 1 else []
     
-    if command == "@help":
+    if command == "@quit":
+        debug_print(f"Processing quit command for {username}", username)
+        return handle_quit(username, args, conn)
+    elif command == "@help":
         help_msg = "Available commands:\n" + \
                    "@quit - Quit the chat\n" + \
                    "@names - List online users\n" + \
@@ -557,7 +562,7 @@ def process_command(username, message_str, conn):
         send_to_client(username, help_msg)
         return False
     # Special case for private messages (@username message)
-    elif command.startswith('@') and command != "@quit" and command != "@names" and \
+    elif command.startswith('@') and command != "@names" and \
        command != "@history" and not command.startswith('@group'):
         # This is a private message
         target = command[1:]  # Remove the @ symbol
@@ -566,7 +571,8 @@ def process_command(username, message_str, conn):
 
     # Look up the command in our handlers dictionary
     if command in COMMAND_HANDLERS:
-        return COMMAND_HANDLERS[command](username, args, conn)
+        result = COMMAND_HANDLERS[command](username, args, conn)
+        return bool(result)  # Ensure we return a boolean
     else:
         send_to_client(username, "ERROR: Unknown command.\n")
         return False
