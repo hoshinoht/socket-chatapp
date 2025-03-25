@@ -19,6 +19,17 @@ if "--debug" in args:
     args.remove("--debug")
     print("Debug mode enabled")
 
+# Flag to indicate if the server is running
+server_running = True
+
+# Helper function to check if msvcrt is available (Windows)
+def msvcrt_available():
+    try:
+        import msvcrt
+        return True
+    except ImportError:
+        return False
+
 def debug_print(message, username="SERVER"):
     if DEBUG:
         timestamp = time.strftime("%H:%M:%S", time.localtime())
@@ -144,6 +155,7 @@ def broadcast(message, exclude_conn=None):
                 remove(conn)
 
 def remove(conn):
+    """Remove a client connection without affecting other connections with the same username"""
     with lock:
         debug_print("In remove critical section")
         removed_user = None
@@ -155,6 +167,7 @@ def remove(conn):
                 break
         return removed_user
 
+
 def clientthread(conn, addr):
     username = ""
     try:
@@ -165,29 +178,40 @@ def clientthread(conn, addr):
         username = decrypt(encrypted_username).strip()
         if not username:
             conn.close()
-            return
+            # throw an exception for invalid username
+            raise Exception("Invalid username")
             
         conn.send("Password: ".encode())  # Password prompt unencrypted
         encrypted_password = conn.recv(2048)
         password = decrypt(encrypted_password).strip()
         if not password:
             conn.close()
-            return
+            # throw an exception for invalid password
+            raise Exception("Invalid password")
 
         with lock:
+            # Check if username already exists in clients (already logged in)
+            if username in clients:
+                debug_print(f"User {username} is already logged in, rejecting duplicate connection", username)
+                conn.send(encrypt("ERROR: User already logged in.\n"))
+                conn.close()
+                # Do NOT call remove() here as no entry was added to clients dict
+                raise Exception("Duplicate connection")
+                
+            # Check if this is a registered user with incorrect password
             if username in credentials:
                 if credentials[username] != password:
                     conn.send(encrypt("ERROR: Incorrect password.\n"))
                     conn.close()
-                    return
+                    # Do NOT call remove() here as no entry was added to clients dict
+                    raise Exception("Invalid password")
             else:
+                # New user, register them
                 credentials[username] = password
 
-            if username in clients:
-                conn.send(encrypt("ERROR: User already logged in.\n"))
-                conn.close()
-                return
+            # Add user to active clients
             clients[username] = conn
+            
             if username not in history:
                 history[username] = []
 
@@ -231,6 +255,7 @@ def clientthread(conn, addr):
                                 # Get user list with minimal lock time
                                 names_list = ""
                                 with lock:
+                                    # Use clients for user list
                                     names_list = ", ".join(clients.keys())
                                 # Send response outside lock
                                 send_to_client(username, "Online users: " + names_list + "\n")
@@ -250,9 +275,22 @@ def clientthread(conn, addr):
                                             user_hist = history.get(username, [])[:]  # Make a copy
                                         
                                         # Process outside lock
-                                        hist_msg = "\n--- Last {} Messages ---\n".format(min(N, len(user_hist)))
-                                        hist_msg += "\n".join(user_hist[-N:])
-                                        send_to_client(username, hist_msg + "\n")
+                                        if not user_hist:
+                                            send_to_client(username, "No chat history available.\n")
+                                        else:
+                                            # Filter out any previous history headers
+                                            filtered_hist = [msg for msg in user_hist if not msg.startswith("--- Last")]
+                                            
+                                            # Create the header separately
+                                            hist_header = "\n--- Last {} Messages ---\n".format(min(N, len(filtered_hist)))
+                                            
+                                            # Get the last N messages from filtered history
+                                            hist_entries = filtered_hist[-N:]
+                                            hist_msg = "\n".join(hist_entries)
+                                            
+                                            # Send header and history separately (header won't be stored in history)
+                                            send_to_client(username, hist_header)
+                                            send_to_client(username, hist_msg)
                                     except ValueError:
                                         send_to_client(username, "ERROR: Please provide a valid number.\n")
                                 continue
@@ -261,7 +299,7 @@ def clientthread(conn, addr):
                             elif message_str[1:].find(' ') != -1 and not message_str.startswith('@group'):
                                 target, msg_text = message_str[1:].split(' ', 1)
                                 
-                                # Fixed: Moving the lock to a smaller scope
+                                # Check if target is in clients
                                 target_exists = False
                                 with lock:
                                     target_exists = target in clients
@@ -422,18 +460,88 @@ def clientthread(conn, addr):
     finally:
         with lock:
             debug_print(f"Cleaning up resources for {username}", username)
-            if username in clients:
+            # Only remove this exact connection from clients dict
+            # to avoid affecting other connections with the same username
+            if username and username in clients and clients[username] == conn:
                 del clients[username]
                 debug_print(f"Removed {username} from clients dict", username)
-        broadcast(f"* {username} has left the chat *\n", conn)
+            
+        # Only broadcast that the user left if this was an actual user session
+        # that made it past authentication
+        if username and username in clients.keys():
+            broadcast(f"* {username} has left the chat *\n", conn)
+        
         try:
             conn.close()
-            debug_print(f"Closed socket for {username}", username)
+            debug_print(f"Closed socket for {username or 'unknown'}", username or "unknown")
         except:
-            debug_print(f"Error closing socket for {username}", username)
-        debug_print(f"Connection closed for {username} from {addr}", username)
+            debug_print(f"Error closing socket for {username or 'unknown'}", username or "unknown")
+        debug_print(f"Connection closed for {username or 'unknown'} from {addr}", username or "unknown")
+
+def keyboard_listener():
+    """Thread function to listen for keyboard input to shut down the server"""
+    global server_running
+    print("Press 'q' or 'Q' to quit the server")
+    
+    if msvcrt_available():
+        import msvcrt
+        while server_running:
+            if msvcrt.kbhit():
+                key = msvcrt.getch().decode('utf-8', errors='ignore').lower()
+                if key == 'q':
+                    print("\nServer shutdown initiated by keyboard command...")
+                    server_running = False
+                    break
+            time.sleep(0.1)
+    else:
+        # For non-Windows platforms, use a simpler approach
+        try:
+            while server_running:
+                key = input()  # This will block until Enter is pressed
+                if key.lower() == 'q':
+                    print("\nServer shutdown initiated by keyboard command...")
+                    server_running = False
+                    break
+                time.sleep(0.1)
+        except EOFError:
+            # This can happen when redirecting stdin/stdout
+            pass
+
+def broadcast_shutdown():
+    """Send a shutdown message to all connected clients"""
+    shutdown_msg = "SERVER SHUTTING DOWN. Goodbye!\n"
+    debug_print("Broadcasting shutdown message")
+    
+    with lock:
+        clients_copy = list(clients.items())
+    
+    for username, conn in clients_copy:
+        try:
+            send_to_client(username, shutdown_msg)
+        except:
+            debug_print(f"Failed to send shutdown message to {username}")
+
+def close_all_connections():
+    """Close all client connections"""
+    debug_print("Closing all client connections")
+    
+    with lock:
+        clients_copy = list(clients.items())
+    
+    for username, conn in clients_copy:
+        try:
+            debug_print(f"Closing connection for {username}")
+            conn.close()
+        except:
+            debug_print(f"Error closing connection for {username}")
+    
+    # Also clear the online_users dictionary
+    with lock:
+        online_users.clear()
+        debug_print("Cleared online users list")
 
 def main():
+    global server_running
     # Check for correct number of arguments
     if len(args) != 3:
         print("Usage: script IP_address port [--debug]")
@@ -446,6 +554,11 @@ def main():
     
     debug_print("Server starting")
     
+    # Start keyboard listener thread
+    keyboard_thread = threading.Thread(target=keyboard_listener)
+    keyboard_thread.daemon = True
+    keyboard_thread.start()
+    
     try:
         server.bind((IP_address, Port))
         server.listen(100)
@@ -453,22 +566,36 @@ def main():
         
         debug_print("Server running, waiting for connections")
         
-        while True:
+        # Set a timeout on accept() so we can check server_running flag
+        server.settimeout(1.0)
+        
+        while server_running:
             try:
                 conn, addr = server.accept()
                 print(addr[0], "connected")
                 start_new_thread(clientthread, (conn, addr))
+            except socket.timeout:
+                # This is expected due to the timeout we set
+                continue
             except KeyboardInterrupt:
                 print("\nShutting down server...")
+                server_running = False
                 break
             except Exception as e:
                 debug_print(f"Error accepting connection: {e}")
+                
+        # Server shutdown procedures
+        print("Performing graceful shutdown...")
+        broadcast_shutdown()
+        close_all_connections()
                 
     except Exception as e:
         debug_print(f"Server error: {e}")
     finally:
         server.close()
         debug_print("Server shut down")
+        # Small delay to allow debug messages to be printed
+        time.sleep(0.5)
 
 if __name__ == "__main__":
     main()

@@ -102,8 +102,13 @@ def receive_messages():
             # Decrypt the received message
             message = decrypt(encrypted_message)
             
+            # Check if decryption returned None
+            if message is None:
+                debug_print("Received an encrypted message that couldn't be decrypted")
+                message = "[Error: Could not decrypt message]\n"
+            
             # Print the received message with a newline before it to separate from prompt
-            debug_print(f"Received: {message.strip()}")
+            debug_print(f"Received: {message}")
             sys.stdout.write("\r" + " " * len(prompt) + "\r")  # Clear prompt
             print(message, end='')
             sys.stdout.flush()
