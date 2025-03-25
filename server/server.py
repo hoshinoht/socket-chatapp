@@ -244,7 +244,10 @@ def clientthread(conn, addr):
                     try:
                         # Command handling
                         if message_str.startswith('@'):
-                            process_command(username, message_str, conn)
+                            should_quit = process_command(username, message_str, conn)
+                            if should_quit:
+                                debug_print(f"User {username} issued quit command", username)
+                                break  # Break the loop if the command handler returns True
                         else:
                             # Regular message broadcasting
                             debug_print(f"Broadcasting regular message from {username}", username)
@@ -333,7 +336,8 @@ def handle_history(username, args, conn):
 
 def handle_private_message(username, args, conn):
     """Handle private message (@user message)"""
-    if not args or ' ' not in args[0]:
+    # ['name', 'msg']
+    if len(args) < 2:
         send_to_client(username, "Usage: @username message\n")
         return
         
@@ -523,7 +527,8 @@ def process_command(username, message_str, conn):
 
     # Look up the command in our handlers dictionary
     if command in COMMAND_HANDLERS:
-        return COMMAND_HANDLERS[command](username, args, conn)
+        result = COMMAND_HANDLERS[command](username, args, conn)
+        return result  # Return the result from the command handler
     else:
         send_to_client(username, "ERROR: Unknown command.\n")
         return False
