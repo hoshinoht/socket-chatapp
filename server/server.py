@@ -244,199 +244,7 @@ def clientthread(conn, addr):
                     try:
                         # Command handling
                         if message_str.startswith('@'):
-                            debug_print(f"Processing command: {message_str}", username)
-                            
-                            # --- Handle different commands ---
-                            if message_str == "@quit":
-                                send_to_client(username, "Goodbye!\n")
-                                break
-                                
-                            elif message_str == "@names":
-                                # Get user list with minimal lock time
-                                names_list = ""
-                                with lock:
-                                    # Use clients for user list
-                                    names_list = ", ".join(clients.keys())
-                                # Send response outside lock
-                                send_to_client(username, "Online users: " + names_list + "\n")
-                                continue
-                                
-                            elif message_str.startswith('@history'):
-                                # Process history command
-                                parts = message_str.split()
-                                if len(parts) != 2:
-                                    send_to_client(username, "Usage: @history <number>\n")
-                                else:
-                                    try:
-                                        N = int(parts[1])
-                                        # Get history with minimal lock time
-                                        user_hist = []
-                                        with lock:
-                                            user_hist = history.get(username, [])[:]  # Make a copy
-                                        
-                                        # Process outside lock
-                                        if not user_hist:
-                                            send_to_client(username, "No chat history available.\n")
-                                        else:
-                                            # Filter out any previous history headers
-                                            filtered_hist = [msg for msg in user_hist if not msg.startswith("--- Last")]
-                                            
-                                            # Create the header separately
-                                            hist_header = "\n--- Last {} Messages ---\n".format(min(N, len(filtered_hist)))
-                                            
-                                            # Get the last N messages from filtered history
-                                            hist_entries = filtered_hist[-N:]
-                                            hist_msg = "\n".join(hist_entries)
-                                            
-                                            # Send header and history separately (header won't be stored in history)
-                                            send_to_client(username, hist_header)
-                                            send_to_client(username, hist_msg)
-                                    except ValueError:
-                                        send_to_client(username, "ERROR: Please provide a valid number.\n")
-                                continue
-                                
-                            # Private message handling
-                            elif message_str[1:].find(' ') != -1 and not message_str.startswith('@group'):
-                                target, msg_text = message_str[1:].split(' ', 1)
-                                
-                                # Check if target is in clients
-                                target_exists = False
-                                with lock:
-                                    target_exists = target in clients
-                                
-                                if target_exists:
-                                    send_to_client(target, "[DM from " + username + "]: " + msg_text + "\n")
-                                    send_to_client(username, "[DM to " + target + "]: " + msg_text + "\n")
-                                else:
-                                    send_to_client(username, "ERROR: User " + target + " not online.\n")
-                                continue
-                                
-                            # Group commands
-                            elif message_str.startswith('@group'):
-                                # Process group commands (set, send, leave, delete)
-                                parts = message_str.split(' ', 2)
-                                if len(parts) < 2:
-                                    send_to_client(username, "ERROR: Invalid group command.\n")
-                                    continue
-                                    
-                                subcmd = parts[1]
-                                if subcmd == "set":
-                                    if len(parts) < 3 or ' ' not in parts[2]:
-                                        send_to_client(username, "Usage: @group set <group_name> <user1>,<user2>,...\n")
-                                        continue
-                                    
-                                    group_name, members_str = parts[2].split(' ', 1)
-                                    members = [m.strip() for m in members_str.split(',') if m.strip()]
-                                    members.append(username)
-                                    
-                                    # Check group and build member list with minimal lock time
-                                    group_exists = False
-                                    not_online = []
-                                    with lock:
-                                        group_exists = group_name in groups
-                                        if not group_exists:
-                                            not_online = [m for m in members if m not in clients]
-                                    
-                                    if group_exists:
-                                        send_to_client(username, "ERROR: Group " + group_name + " already exists.\n")
-                                    elif not_online:
-                                        send_to_client(username, "ERROR: These users not online: " + ", ".join(not_online) + "\n")
-                                    else:
-                                        # Create the group with a separate lock
-                                        with lock:
-                                            groups[group_name] = set(members)
-                                        send_to_client(username, "Group " + group_name + " created with members: " + 
-                                                     ", ".join(members) + "\n")
-                                    
-                                elif subcmd == "send":
-                                    if len(parts) < 3 or ' ' not in parts[2]:
-                                        send_to_client(username, "Usage: @group send <group_name> <message>\n")
-                                        continue
-                                    
-                                    group_name, group_msg = parts[2].split(' ', 1)
-                                    
-                                    # Check group membership with minimal lock time
-                                    group_exists = False
-                                    is_member = False
-                                    member_list = []
-                                    with lock:
-                                        group_exists = group_name in groups
-                                        if group_exists:
-                                            is_member = username in groups[group_name]
-                                            if is_member:
-                                                # Make a copy of the member list
-                                                member_list = list(groups[group_name])
-                                    
-                                    if not group_exists:
-                                        send_to_client(username, "ERROR: Group " + group_name + " does not exist.\n")
-                                    elif not is_member:
-                                        send_to_client(username, "ERROR: You are not a member of group " + group_name + ".\n")
-                                    else:
-                                        full_msg = "[Group: " + group_name + "] " + username + ": " + group_msg + "\n"
-                                        # Send to each member outside the lock
-                                        for member in member_list:
-                                            # Check if member is still connected
-                                            member_connected = False
-                                            with lock:
-                                                member_connected = member in clients
-                                            if member_connected:
-                                                send_to_client(member, full_msg)
-                                    
-                                elif subcmd == "leave":
-                                    if len(parts) < 3:
-                                        send_to_client(username, "Usage: @group leave <group_name>\n")
-                                        continue
-                                    
-                                    group_name = parts[2].strip()
-                                    
-                                    # Check group with minimal lock time
-                                    group_exists = False
-                                    is_member = False
-                                    with lock:
-                                        group_exists = group_name in groups
-                                        if group_exists:
-                                            is_member = username in groups[group_name]
-                                            if is_member:
-                                                groups[group_name].remove(username)
-                                    
-                                    if not group_exists:
-                                        send_to_client(username, "ERROR: Group " + group_name + " does not exist.\n")
-                                    elif not is_member:
-                                        send_to_client(username, "ERROR: You are not a member of group " + group_name + ".\n")
-                                    else:
-                                        send_to_client(username, "You left group " + group_name + ".\n")
-                                    
-                                elif subcmd == "delete":
-                                    if len(parts) < 3:
-                                        send_to_client(username, "Usage: @group delete <group_name>\n")
-                                        continue
-                                    
-                                    group_name = parts[2].strip()
-                                    
-                                    # Check group with minimal lock time
-                                    group_exists = False
-                                    is_member = False
-                                    with lock:
-                                        group_exists = group_name in groups
-                                        if group_exists:
-                                            is_member = username in groups[group_name]
-                                            if is_member:
-                                                del groups[group_name]
-                                    
-                                    if not group_exists:
-                                        send_to_client(username, "ERROR: Group " + group_name + " does not exist.\n")
-                                    elif not is_member:
-                                        send_to_client(username, "ERROR: You are not a member of group " + group_name + ".\n")
-                                    else:
-                                        send_to_client(username, "Group " + group_name + " deleted.\n")
-                                else:
-                                    send_to_client(username, "ERROR: Unknown group command.\n")
-                                continue
-                                
-                            else:
-                                send_to_client(username, "ERROR: Unknown command.\n")
-                                continue
-                                
+                            process_command(username, message_str, conn)
                         else:
                             # Regular message broadcasting
                             debug_print(f"Broadcasting regular message from {username}", username)
@@ -477,6 +285,237 @@ def clientthread(conn, addr):
         except:
             debug_print(f"Error closing socket for {username or 'unknown'}", username or "unknown")
         debug_print(f"Connection closed for {username or 'unknown'} from {addr}", username or "unknown")
+
+# Command handler functions
+def handle_quit(username, args, conn):
+    """Handle @quit command"""
+    send_to_client(username, "Goodbye!\n")
+    return True  # Signal to break the main loop
+
+def handle_names(username, args, conn):
+    """Handle @names command"""
+    with lock:
+        names_list = ", ".join(clients.keys())
+    send_to_client(username, "Online users: " + names_list + "\n")
+    
+def handle_history(username, args, conn):
+    """Handle @history command"""
+    if not args:
+        send_to_client(username, "Usage: @history <number>\n")
+        return
+        
+    try:
+        N = int(args[0])
+        # Get history with minimal lock time
+        user_hist = []
+        with lock:
+            user_hist = history.get(username, [])[:]  # Make a copy
+        
+        # Process outside lock
+        if not user_hist:
+            send_to_client(username, "No chat history available.\n")
+        else:
+            # Filter out any previous history headers
+            filtered_hist = [msg for msg in user_hist if not msg.startswith("--- Last")]
+            
+            # Create the header separately
+            hist_header = "\n--- Last {} Messages ---\n".format(min(N, len(filtered_hist)))
+            
+            # Get the last N messages from filtered history
+            hist_entries = filtered_hist[-N:]
+            hist_msg = "\n".join(hist_entries)
+            
+            # Send header and history separately (header won't be stored in history)
+            send_to_client(username, hist_header)
+            send_to_client(username, hist_msg)
+    except ValueError:
+        send_to_client(username, "ERROR: Please provide a valid number.\n")
+
+def handle_private_message(username, args, conn):
+    """Handle private message (@user message)"""
+    if not args or ' ' not in args[0]:
+        send_to_client(username, "Usage: @username message\n")
+        return
+        
+    target = args[0]
+    msg_text = ' '.join(args[1:])
+    
+    # Check if target is in clients
+    with lock:
+        target_exists = target in clients
+    
+    if target_exists:
+        send_to_client(target, "[DM from " + username + "]: " + msg_text + "\n")
+        send_to_client(username, "[DM to " + target + "]: " + msg_text + "\n")
+    else:
+        send_to_client(username, "ERROR: User " + target + " not online.\n")
+
+def handle_group_set(username, args, conn):
+    """Handle @group set command"""
+    if len(args) < 2 or ' ' not in args[1]:
+        send_to_client(username, "Usage: @group set <group_name> <user1>,<user2>,...\n")
+        return
+    
+    group_name = args[1]
+    members_str = ' '.join(args[2:])
+    members = [m.strip() for m in members_str.split(',') if m.strip()]
+    members.append(username)
+    
+    # Check group and build member list with minimal lock time
+    group_exists = False
+    not_online = []
+    with lock:
+        group_exists = group_name in groups
+        if not group_exists:
+            not_online = [m for m in members if m not in clients]
+    
+    if group_exists:
+        send_to_client(username, "ERROR: Group " + group_name + " already exists.\n")
+    elif not_online:
+        send_to_client(username, "ERROR: These users not online: " + ", ".join(not_online) + "\n")
+    else:
+        # Create the group with a separate lock
+        with lock:
+            groups[group_name] = set(members)
+        send_to_client(username, "Group " + group_name + " created with members: " + 
+                     ", ".join(members) + "\n")
+
+def handle_group_send(username, args, conn):
+    """Handle @group send command"""
+    if len(args) < 3:
+        send_to_client(username, "Usage: @group send <group_name> <message>\n")
+        return
+    
+    group_name = args[1]
+    group_msg = ' '.join(args[2:])
+    
+    # Check group membership with minimal lock time
+    group_exists = False
+    is_member = False
+    member_list = []
+    with lock:
+        group_exists = group_name in groups
+        if group_exists:
+            is_member = username in groups[group_name]
+            if is_member:
+                # Make a copy of the member list
+                member_list = list(groups[group_name])
+    
+    if not group_exists:
+        send_to_client(username, "ERROR: Group " + group_name + " does not exist.\n")
+    elif not is_member:
+        send_to_client(username, "ERROR: You are not a member of group " + group_name + ".\n")
+    else:
+        full_msg = "[Group: " + group_name + "] " + username + ": " + group_msg + "\n"
+        # Send to each member outside the lock
+        for member in member_list:
+            # Check if member is still connected
+            with lock:
+                member_connected = member in clients
+            if member_connected:
+                send_to_client(member, full_msg)
+
+def handle_group_leave(username, args, conn):
+    """Handle @group leave command"""
+    if len(args) < 2:
+        send_to_client(username, "Usage: @group leave <group_name>\n")
+        return
+    
+    group_name = args[1]
+    
+    # Check group with minimal lock time
+    group_exists = False
+    is_member = False
+    with lock:
+        group_exists = group_name in groups
+        if group_exists:
+            is_member = username in groups[group_name]
+            if is_member:
+                groups[group_name].remove(username)
+    
+    if not group_exists:
+        send_to_client(username, "ERROR: Group " + group_name + " does not exist.\n")
+    elif not is_member:
+        send_to_client(username, "ERROR: You are not a member of group " + group_name + ".\n")
+    else:
+        send_to_client(username, "You left group " + group_name + ".\n")
+
+def handle_group_delete(username, args, conn):
+    """Handle @group delete command"""
+    if len(args) < 2:
+        send_to_client(username, "Usage: @group delete <group_name>\n")
+        return
+    
+    group_name = args[1]
+    
+    # Check group with minimal lock time
+    group_exists = False
+    is_member = False
+    with lock:
+        group_exists = group_name in groups
+        if group_exists:
+            is_member = username in groups[group_name]
+            if is_member:
+                del groups[group_name]
+    
+    if not group_exists:
+        send_to_client(username, "ERROR: Group " + group_name + " does not exist.\n")
+    elif not is_member:
+        send_to_client(username, "ERROR: You are not a member of group " + group_name + ".\n")
+    else:
+        send_to_client(username, "Group " + group_name + " deleted.\n")
+
+# Group command handler mapping
+GROUP_COMMAND_HANDLERS = {
+    "set": handle_group_set,
+    "send": handle_group_send,
+    "leave": handle_group_leave,
+    "delete": handle_group_delete
+}
+
+def handle_group(username, args, conn):
+    """Handle @group command"""
+    if not args:
+        send_to_client(username, "Usage: @group <set|send|leave|delete> ...\n")
+        return
+        
+    subcmd = args[0]
+    if subcmd in GROUP_COMMAND_HANDLERS:
+        GROUP_COMMAND_HANDLERS[subcmd](username, args, conn)
+    else:
+        send_to_client(username, "ERROR: Unknown group command.\n")
+
+# Main command handler mapping
+COMMAND_HANDLERS = {
+    "@quit": handle_quit,
+    "@names": handle_names,
+    "@history": handle_history,
+    "@group": handle_group
+}
+
+def process_command(username, message_str, conn):
+    """Process a command message"""
+    debug_print(f"Processing command: {message_str}", username)
+    
+    # Parse the command
+    parts = message_str.split()
+    command = parts[0]
+    args = parts[1:] if len(parts) > 1 else []
+    
+    # Special case for private messages (@username message)
+    if command.startswith('@') and command != "@quit" and command != "@names" and \
+       command != "@history" and not command.startswith('@group'):
+        # This is a private message
+        target = command[1:]  # Remove the @ symbol
+        handle_private_message(username, [target] + args, conn)
+        return False
+    
+    # Look up the command in our handlers dictionary
+    if command in COMMAND_HANDLERS:
+        return COMMAND_HANDLERS[command](username, args, conn)
+    else:
+        send_to_client(username, "ERROR: Unknown command.\n")
+        return False
 
 def keyboard_listener():
     """Thread function to listen for keyboard input to shut down the server"""
