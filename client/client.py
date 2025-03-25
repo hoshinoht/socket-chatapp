@@ -97,6 +97,9 @@ def receive_messages():
                 debug_print("Empty message received, server disconnected")
                 print("\nConnection closed by server")
                 running = False
+                # Exit the application when server disconnects
+                print("Server disconnected. Exiting...")
+                os._exit(0)  # Force exit the program
                 break
             
             # Decrypt the received message
@@ -117,6 +120,9 @@ def receive_messages():
             debug_print(f"Error in receive thread: {e}")
             print(f"\nError receiving: {e}")
             running = False
+            # Exit the application on socket errors as well
+            print("Connection to server lost. Exiting...")
+            os._exit(0)  # Force exit the program
             break
     debug_print("Receive thread ended")
 

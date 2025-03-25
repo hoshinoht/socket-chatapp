@@ -501,15 +501,26 @@ def process_command(username, message_str, conn):
     parts = message_str.split()
     command = parts[0]
     args = parts[1:] if len(parts) > 1 else []
-    
+    if command == "@help":
+        help_msg = "Available commands:\n" + \
+                   "@quit - Quit the chat\n" + \
+                   "@names - List online users\n" + \
+                   "@history <number> - Show last N messages\n" + \
+                   "@group set <group_name> <user1>,<user2>,... - Create a group\n" + \
+                   "@group send <group_name> <message> - Send a message to a group\n" + \
+                   "@group leave <group_name> - Leave a group\n" + \
+                   "@group delete <group_name> - Delete a group\n" + \
+                   "@help - Show this help message\n"
+        send_to_client(username, help_msg)
+        return False
     # Special case for private messages (@username message)
-    if command.startswith('@') and command != "@quit" and command != "@names" and \
+    elif command.startswith('@') and command != "@quit" and command != "@names" and \
        command != "@history" and not command.startswith('@group'):
         # This is a private message
         target = command[1:]  # Remove the @ symbol
         handle_private_message(username, [target] + args, conn)
         return False
-    
+
     # Look up the command in our handlers dictionary
     if command in COMMAND_HANDLERS:
         return COMMAND_HANDLERS[command](username, args, conn)
