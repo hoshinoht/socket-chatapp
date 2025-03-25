@@ -356,12 +356,16 @@ def handle_private_message(username, args, conn):
 
 def handle_group_set(username, args, conn):
     """Handle @group set command"""
-    if len(args) < 2 or ' ' not in args[1]:
+    if len(args) < 2:
         send_to_client(username, "Usage: @group set <group_name> <user1>,<user2>,...\n")
         return
     
     group_name = args[1]
-    members_str = ' '.join(args[2:])
+    if len(args) < 3:
+        send_to_client(username, "Usage: @group set <group_name> <user1>,<user2>,...\n")
+        return
+        
+    members_str = args[2]  # The comma-separated list is a single argument
     members = [m.strip() for m in members_str.split(',') if m.strip()]
     members.append(username)
     
@@ -391,7 +395,7 @@ def handle_group_send(username, args, conn):
         return
     
     group_name = args[1]
-    group_msg = ' '.join(args[2:])
+    group_msg = ' '.join(args[2:])  # Combine all remaining args as the message
     
     # Check group membership with minimal lock time
     group_exists = False
@@ -491,7 +495,6 @@ def handle_group(username, args, conn):
 
 # Main command handler mapping
 COMMAND_HANDLERS = {
-    "@quit": handle_quit,
     "@names": handle_names,
     "@history": handle_history,
     "@group": handle_group
@@ -501,11 +504,53 @@ def process_command(username, message_str, conn):
     """Process a command message"""
     debug_print(f"Processing command: {message_str}", username)
     
-    # Parse the command
+    # Handle special case for @group command with proper argument parsing
+    if message_str.startswith('@group'):
+        # Split only into main parts to preserve message spaces
+        parts = message_str.split(' ', 3)  # Split into max 4 parts: @group, subcmd, group_name, [rest]
+        
+        if len(parts) < 2:
+            send_to_client(username, "Usage: @group <set|send|leave|delete> ...\n")
+            return False
+        
+        subcmd = parts[1]
+        
+        # Prepare args differently based on the subcommand
+        if subcmd == "set" and len(parts) >= 4:
+            # Format: @group set group_name user1,user2,...
+            handle_group_set(username, ["set", parts[2], parts[3]], conn)
+        elif subcmd == "send" and len(parts) >= 4:
+            # Format: @group send group_name message
+            handle_group_send(username, ["send", parts[2], parts[3]], conn)
+        elif subcmd == "leave" and len(parts) >= 3:
+            # Format: @group leave group_name
+            handle_group_leave(username, ["leave", parts[2]], conn)
+        elif subcmd == "delete" and len(parts) >= 3:
+            # Format: @group delete group_name
+            handle_group_delete(username, ["delete", parts[2]], conn)
+        else:
+            # Improper command format
+            if subcmd == "set":
+                send_to_client(username, "Usage: @group set <group_name> <user1>,<user2>,...\n")
+            elif subcmd == "send":
+                send_to_client(username, "Usage: @group send <group_name> <message>\n")
+            elif subcmd == "leave":
+                send_to_client(username, "Usage: @group leave <group_name>\n")
+            elif subcmd == "delete":
+                send_to_client(username, "Usage: @group delete <group_name>\n")
+            else:
+                send_to_client(username, "ERROR: Unknown group command.\n")
+        return False
+        
+    # Parse the command for other commands
     parts = message_str.split()
     command = parts[0]
     args = parts[1:] if len(parts) > 1 else []
-    if command == "@help":
+    
+    if command == "@quit":
+        debug_print(f"Processing quit command for {username}", username)
+        return handle_quit(username, args, conn)
+    elif command == "@help":
         help_msg = "Available commands:\n" + \
                    "@quit - Quit the chat\n" + \
                    "@names - List online users\n" + \
@@ -518,7 +563,7 @@ def process_command(username, message_str, conn):
         send_to_client(username, help_msg)
         return False
     # Special case for private messages (@username message)
-    elif command.startswith('@') and command != "@quit" and command != "@names" and \
+    elif command.startswith('@') and command != "@names" and \
        command != "@history" and not command.startswith('@group'):
         # This is a private message
         target = command[1:]  # Remove the @ symbol
