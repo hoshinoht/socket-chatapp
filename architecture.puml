@@ -33,7 +33,6 @@ package "Server Application" {
   
   database "Messages" {
     [History]
-    [Groups]
   }
 }
 
@@ -54,6 +53,5 @@ server --> router : routes messages
 router --> Credentials : validates
 router --> Connections : manages
 router --> History : stores
-router --> Groups : manages
 
 @enduml
