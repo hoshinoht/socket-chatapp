@@ -279,7 +279,7 @@ def clientthread(conn, addr):
             
         # Only broadcast that the user left if this was an actual user session
         # that made it past authentication
-        if username and username in clients.keys():
+        if username and username in clients.keys() and clients[username] == conn: 
             broadcast(f"* {username} has left the chat *\n", conn)
         
         try:
