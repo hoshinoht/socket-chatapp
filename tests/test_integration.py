@@ -168,5 +168,45 @@ class TestClientServerIntegration(unittest.TestCase):
         # Clean up
         client.close()
 
+import subprocess, signal
+
+class TestRealServerCommands(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.server_process = subprocess.Popen(
+            [sys.executable, "server/server.py", "127.0.0.1", "9999"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        time.sleep(1)  # Give server time to start
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server_process.terminate()
+        cls.server_process.wait()
+
+    def test_names_command(self):
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client.connect(("127.0.0.1", 9999))
+        # Log in as "tester"
+        prompt = client.recv(2048).decode()
+        self.assertIn("Username:", prompt)
+        client.send(encrypt("tester"))
+
+        prompt = client.recv(2048).decode()
+        self.assertIn("Password:", prompt)
+        client.send(encrypt("password"))
+
+        # Receive welcome
+        welcome = decrypt(client.recv(2048))
+        self.assertIn("Welcome to the chatroom", welcome)
+
+        # Test @names command
+        client.send(encrypt("@names"))
+        response = decrypt(client.recv(2048))
+        self.assertIn("Online users:", response)
+
+        client.close()
+
 if __name__ == "__main__":
     unittest.main()

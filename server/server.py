@@ -326,7 +326,7 @@ def handle_history(username, args, conn):
             
             # Get the last N messages from filtered history
             hist_entries = filtered_hist[-N:]
-            hist_msg = "\n".join(hist_entries)
+            hist_msg = "".join(hist_entries)
             
             # Send header and history separately (header won't be stored in history)
             send_to_client(username, hist_header)
